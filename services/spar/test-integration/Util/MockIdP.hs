@@ -28,9 +28,7 @@ import Network.HTTP.Types as HTTP
 import Network.Wai
 import SAML2.WebSSO
 import SAML2.WebSSO.Test.Credentials
-import Text.Hamlet.XML
 import Text.XML
-import Text.XML.DSig
 import Text.XML.Util
 import URI.ByteString
 import Util.Options
@@ -38,7 +36,6 @@ import Util.Types
 
 import qualified Bilge
 import qualified Control.Concurrent.Async          as Async
-import qualified Data.X509                         as X509
 import qualified Network.Wai.Handler.Warp          as Warp
 import qualified Network.Wai.Handler.Warp.Internal as Warp
 
@@ -67,7 +64,7 @@ serveSampleIdP
 serveSampleIdP mkissuer requri = do
   let mkMetaDflt = do
         issuer <- mkissuer
-        Util.MockIdP.sampleIdPMetadata issuer requri
+        pure . render . sampleIdPMetadata issuer $ requri
   chan <- atomically newTChan
   let getNextMeta = maybe mkMetaDflt pure =<< atomically (tryReadTChan chan)
       app req cont = case pathInfo req of
@@ -75,28 +72,6 @@ serveSampleIdP mkissuer requri = do
         ["resp"] -> cont $ responseLBS status400 [] ""  -- we do that without the mock server, via 'mkAuthnResponse'
         _        -> cont $ responseLBS status404 [] ""
   pure (app, chan)
-
-sampleIdPMetadata :: MonadIO m => Issuer -> URI -> m [Node]
-sampleIdPMetadata issuer requri = sampleIdPMetadata' sampleIdPPrivkey sampleIdPCert issuer requri
-
-sampleIdPMetadata' :: MonadIO m => SignPrivCreds -> X509.SignedCertificate -> Issuer -> URI -> m [Node]
-sampleIdPMetadata' privKey cert issuer requri = liftIO $ signElementIO privKey [xml|
-    <EntityDescriptor
-      ID="#{descID}"
-      entityID="#{entityID}"
-      xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
-        <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
-            <KeyDescriptor use="signing">
-                ^{certNodes}
-            <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="#{authnUrl}">
-  |]
-  where
-    descID = "_0c29ba62-a541-11e8-8042-873ef87bdcba"
-    entityID = renderURI $ issuer ^. fromIssuer
-    authnUrl = renderURI $ requri
-    certNodes = case parseLBS def . cs . renderKeyInfo $ cert of
-      Right (Document _ sc _) -> [NodeElement sc]
-      bad -> error $ show bad
 
 
 -- auxiliaries

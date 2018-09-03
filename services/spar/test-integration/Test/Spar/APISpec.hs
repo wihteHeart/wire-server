@@ -327,18 +327,12 @@ spec = do
             (Just $ \_ _ -> pure [NodeElement (Element "bloo" mempty mempty)])
             "invalid-signature"  -- well, this is just what it checks first...
 
-      context "invalid metadata signature" $ do
-        it "rejects" $ do
-          createIdpMockErr
-            (Just $ sampleIdPMetadata' sampleIdPPrivkey2 sampleIdPCert)
-            "invalid-signature"
-
       context "idp (identified by issuer) is in use by other team" $ do
         it "rejects" $ do
           env <- ask
           resetMeta <- do
             issuer <- makeIssuer
-            metadata <- Util.sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
+            metadata <- _ $ sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
             pure . liftIO . atomically $ writeTChan (env ^. teIdPChan) metadata
 
           (uid1, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
