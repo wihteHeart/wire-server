@@ -310,7 +310,7 @@ spec = do
           createIdpMockErr :: HasCallStack => Maybe (Issuer -> URI -> IO [Node]) -> TestErrorLabel -> ReaderT TestEnv IO ()
           createIdpMockErr mkMetadata errlabel = do
             env <- ask
-            (newidp, IdPMetadata issuer requri _certs) <- makeTestNewIdP
+            (newidp, IdPMetadata issuer requri _cert _certs) <- makeTestNewIdP
             case mkMetadata of
               Nothing -> pure ()
               Just mk -> liftIO $ mk issuer requri >>= atomically . writeTChan (env ^. teIdPChan)
@@ -340,7 +340,7 @@ spec = do
               requri = env ^. teTstOpts . to cfgMockIdp . to mockidpRequestURI
           resetMeta <- do
             issuer <- makeIssuer
-            metadata <- sampleIdPMetadata newidp issuer requri
+            metadata <- Util.sampleIdPMetadata newidp issuer requri
             pure . liftIO . atomically $ writeTChan (env ^. teIdPChan) metadata
 
           (uid1, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)

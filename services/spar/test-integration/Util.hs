@@ -107,8 +107,18 @@ mkEnv _teTstOpts _teOpts = do
   let _teBrig    = endpointToReq (cfgBrig   _teTstOpts)
       _teGalley  = endpointToReq (cfgGalley _teTstOpts)
       _teSpar    = endpointToReq (cfgSpar   _teTstOpts)
-      _teNewIdP  = NewIdP (mockidpMetadataURI mockidp) (mockidpDSigCert mockidp)
-      mockidp    = cfgMockIdp _teTstOpts
+      _teNewIdP  = NewIdP (mockidpMetadataURI mockidp) mockidpMeta
+
+      mockidp :: MockIdPConfig
+      mockidp = cfgMockIdp _teTstOpts
+
+      mockidpMeta :: IdPMetadata
+      mockidpMeta = IdPMetadata
+        { _edIssuer = mockidpIssuer mockidp
+        , _edRequestURI = mockidpRequestURI mockidp
+        , _edCertMetadata = mockidpDSigCert mockidp
+        , _edCertAuthnResponse = mockidpDSigCert mockidp :| []
+        }
 
   (app, _teIdPChan) <- serveSampleIdP _teNewIdP makeIssuer (mockidpRequestURI mockidp)
   let srv     = Warp.runTLS tlss defs app
@@ -366,7 +376,7 @@ makeTestNewIdP = do
       requri = env ^. teTstOpts . to cfgMockIdp . to mockidpRequestURI
       cert   = env ^. teTstOpts . to cfgMockIdp . to mockidpDSigCert
   issuer <- makeIssuer
-  pure (idp, IdPMetadata issuer requri (cert :| []))
+  pure (idp, IdPMetadata issuer requri cert (cert :| []))
 
 
 -- | Create new user, team, idp from given 'NewIdP'.

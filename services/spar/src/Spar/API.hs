@@ -217,16 +217,23 @@ getZUsrOwnedTeam (Just uid) = do
     Just teamid -> teamid <$ Intra.assertIsTeamOwner uid teamid
 
 
--- | FUTUREWORK: much of this function could move to the saml2-web-sso package.
+-- | FUTUREWORK: much of this function could move to the saml2-web-sso package.  (just as get,
+-- create, update, delete of idps altogether, come to think of it.)
+--
+-- NB: The 'NewIdP' argument contains a 'IdPMetadata' value, but we only use that for the public
+-- key.  Then we fetch the metadata from the url and verify the signature on that value.  This way
+-- it will be trivial to provide an end-point like `/sso/update-idp/:tid` in the future, that
+-- requests the metadata from its URL again, verifies the signature, and stores the changed
+-- information.
 validateNewIdP :: forall m. (HasCallStack, m ~ Spar)
                => SAML.NewIdP -> TeamId -> m IdP
-validateNewIdP (SAML.NewIdP _idpMetadataURI metadataPublicKey) _idpeTeam = do
+validateNewIdP (SAML.NewIdP _idpMetadataURI metadata) _idpeTeam = do
   _idpId <- SAML.IdPId <$> SAML.createUUID
   _idpeSPInfo <- wrapMonadClientWithEnv $ Data.getSPInfo _idpId
   let _idpExtraInfo = IdPExtra { _idpeTeam, _idpeSPInfo }
 
   _idpMetadata :: SAML.IdPMetadata
-    <- fetchMetadata _idpMetadataURI metadataPublicKey
+    <- fetchMetadata _idpMetadataURI (metadata ^. SAML.edCertMetadata)
 
   wrapMonadClient (Data.getIdPIdByIssuer (_idpMetadata ^. SAML.edIssuer)) >>= \case
     Nothing -> pure ()

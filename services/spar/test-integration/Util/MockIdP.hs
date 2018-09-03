@@ -68,7 +68,7 @@ serveSampleIdP
 serveSampleIdP newidp mkissuer requri = do
   let mkMetaDflt = do
         issuer <- mkissuer
-        sampleIdPMetadata newidp issuer requri
+        Util.MockIdP.sampleIdPMetadata newidp issuer requri
   chan <- atomically newTChan
   let getNextMeta = maybe mkMetaDflt pure =<< atomically (tryReadTChan chan)
       app req cont = case pathInfo req of
@@ -78,7 +78,7 @@ serveSampleIdP newidp mkissuer requri = do
   pure (app, chan)
 
 sampleIdPMetadata :: MonadIO m => NewIdP -> Issuer -> URI -> m [Node]
-sampleIdPMetadata newidp issuer requri = sampleIdPMetadata' sampleIdPPrivkey (newidp ^. nidpPublicKey) issuer requri
+sampleIdPMetadata newidp issuer requri = sampleIdPMetadata' sampleIdPPrivkey (newidp ^. nidpMetadata . edCertMetadata) issuer requri
 
 sampleIdPMetadata' :: MonadIO m => SignPrivCreds -> X509.SignedCertificate -> Issuer -> URI -> m [Node]
 sampleIdPMetadata' privKey cert issuer requri = liftIO $ signElementIO privKey [xml|

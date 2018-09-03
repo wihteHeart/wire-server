@@ -22,9 +22,17 @@ import Test.QuickCheck
 
 instance Arbitrary SAML.NewIdP where
   arbitrary = do
-    _nidpMetadata   <- arbitrary
-    _nidpPublicKey  <- arbitrary
+    _nidpMetadataURI <- arbitrary
+    _nidpMetadata    <- arbitrary
     pure $ SAML.NewIdP {..}
+
+instance Arbitrary SAML.IdPMetadata where
+  arbitrary = do
+    _edIssuer <- arbitrary
+    _edRequestURI <- arbitrary
+    _edCertMetadata <- arbitrary
+    _edCertAuthnResponse <- arbitrary
+    pure $ SAML.IdPMetadata {..}
 
 instance Arbitrary SPInfo where
   arbitrary = do

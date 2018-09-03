@@ -170,7 +170,7 @@ getUser (SAML.UserRef tenant subject) = fmap runIdentity <$>
 ----------------------------------------------------------------------
 -- idp
 
-type IdPConfigRow = (SAML.IdPId, URI, SAML.Issuer, URI, SignedCertificate, [SignedCertificate], TeamId)
+type IdPConfigRow = (SAML.IdPId, URI, SAML.Issuer, URI, SignedCertificate, SignedCertificate, [SignedCertificate], TeamId)
 
 storeIdPConfig :: (HasCallStack, MonadClient m) => SAML.IdPConfig IdPExtra -> m ()
 storeIdPConfig idp = retry x5 . batch $ do
@@ -181,6 +181,7 @@ storeIdPConfig idp = retry x5 . batch $ do
     , idp ^. SAML.idpMetadataURI
     , idp ^. SAML.idpIssuer
     , idp ^. SAML.idpRequestUri
+    , idp ^. SAML.idpMetadata . SAML.edCertMetadata
     , NL.head (idp ^. SAML.idpPublicKeys)
     , NL.tail (idp ^. SAML.idpPublicKeys)
       -- (the 'List1' is split up into head and tail to make migration from one-element-only easier.)
@@ -196,7 +197,7 @@ storeIdPConfig idp = retry x5 . batch $ do
     )
   where
     ins :: PrepQuery W IdPConfigRow ()
-    ins = "INSERT INTO idp (idp, metadata, issuer, request_uri, public_key, extra_public_keys, team) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ins = "INSERT INTO idp (idp, metadata, issuer, request_uri, meta_public_key, public_key, extra_public_keys, team) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 
     byIssuer :: PrepQuery W (SAML.IdPId, SAML.Issuer) ()
     byIssuer = "INSERT INTO issuer_idp (idp, issuer) VALUES (?, ?)"
@@ -221,6 +222,7 @@ getIdPConfig idpid =
           -- metadata
           , _edIssuer
           , _edRequestURI
+          , _edCertMetadata
           , certsHead
           , certsTail
           -- extras
@@ -233,7 +235,7 @@ getIdPConfig idpid =
       pure $ SAML.IdPConfig {..}
 
     sel :: PrepQuery R (Identity SAML.IdPId) IdPConfigRow
-    sel = "SELECT idp, metadata, issuer, request_uri, public_key, extra_public_keys, team FROM idp WHERE idp = ?"
+    sel = "SELECT idp, metadata, issuer, request_uri, meta_public_key, public_key, extra_public_keys, team FROM idp WHERE idp = ?"
 
 getIdPConfigByIssuer
   :: (HasCallStack, MonadClient m, MonadReader Env m)
