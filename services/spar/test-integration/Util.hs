@@ -28,7 +28,7 @@ module Util
   , call
   , ping
   , makeIssuer
-  , makeTestNewIdP
+  , makeTestIdPMetadata
   , createTestIdPFrom
   , negotiateAuthnRequest
   , submitAuthnResponse
@@ -107,20 +107,18 @@ mkEnv _teTstOpts _teOpts = do
   let _teBrig    = endpointToReq (cfgBrig   _teTstOpts)
       _teGalley  = endpointToReq (cfgGalley _teTstOpts)
       _teSpar    = endpointToReq (cfgSpar   _teTstOpts)
-      _teNewIdP  = NewIdP (mockidpMetadataURI mockidp) mockidpMeta
+
+      _teMetadata :: IdPMetadata
+      _teMetadata = IdPMetadata
+        { _edIssuer = mockidpIssuer mockidp
+        , _edRequestURI = mockidpRequestURI mockidp
+        , _edCertAuthnResponse = mockidpDSigCert mockidp :| []
+        }
 
       mockidp :: MockIdPConfig
       mockidp = cfgMockIdp _teTstOpts
 
-      mockidpMeta :: IdPMetadata
-      mockidpMeta = IdPMetadata
-        { _edIssuer = mockidpIssuer mockidp
-        , _edRequestURI = mockidpRequestURI mockidp
-        , _edCertMetadata = mockidpDSigCert mockidp
-        , _edCertAuthnResponse = mockidpDSigCert mockidp :| []
-        }
-
-  (app, _teIdPChan) <- serveSampleIdP _teNewIdP makeIssuer (mockidpRequestURI mockidp)
+  (app, _teIdPChan) <- serveSampleIdP makeIssuer (mockidpRequestURI mockidp)
   let srv     = Warp.runTLS tlss defs app
       tlss    = Warp.tlsSettings (mockidpCert mocktls) (mockidpPrivateKey mocktls)
       mocktls = cfgMockIdp _teTstOpts
@@ -130,7 +128,7 @@ mkEnv _teTstOpts _teOpts = do
   assertServiceIsUp _teIdPHandle _teMgr (endpointToReq . mockidpConnect . cfgMockIdp $ _teTstOpts)
 
   (_teUserId, _teTeamId, _teIdP) <- do
-    createTestIdPFrom _teNewIdP _teMgr _teBrig _teGalley _teSpar
+    createTestIdPFrom _teMetadata _teMgr _teBrig _teGalley _teSpar
 
   pure TestEnv {..}
 
@@ -369,23 +367,20 @@ makeIssuer = do
 -- | Create a cloned 'NewIdP' corresponding to the mock idp from the config and suitable for
 -- registering with spar.  The issuer id can be used to do this several times without getting the
 -- error that this issuer is already used for another team.
-makeTestNewIdP :: (HasCallStack, MonadReader TestEnv m, MonadIO m) => m (NewIdP, IdPMetadata)
-makeTestNewIdP = do
+makeTestIdPMetadata :: (HasCallStack, MonadReader TestEnv m, MonadIO m) => m IdPMetadata
+makeTestIdPMetadata = do
   env <- ask
-  let idp    = env ^. teNewIdP
-      requri = env ^. teTstOpts . to cfgMockIdp . to mockidpRequestURI
-      cert   = env ^. teTstOpts . to cfgMockIdp . to mockidpDSigCert
   issuer <- makeIssuer
-  pure (idp, IdPMetadata issuer requri cert (cert :| []))
+  pure ((env ^. teMetadata) & edIssuer .~ issuer)
 
 
 -- | Create new user, team, idp from given 'NewIdP'.
 createTestIdPFrom :: (HasCallStack, MonadIO m)
-                  => NewIdP -> Manager -> BrigReq -> GalleyReq -> SparReq -> m (UserId, TeamId, IdP)
-createTestIdPFrom newidp mgr brig galley spar = do
+                  => IdPMetadata -> Manager -> BrigReq -> GalleyReq -> SparReq -> m (UserId, TeamId, IdP)
+createTestIdPFrom metadata mgr brig galley spar = do
   liftIO . runHttpT mgr $ do
     (uid, tid) <- createUserWithTeam brig galley
-    (uid, tid,) <$> callIdpCreate spar (Just uid) newidp
+    (uid, tid,) <$> callIdpCreate spar (Just uid) metadata
 
 
 negotiateAuthnRequest :: (HasCallStack, MonadIO m, MonadReader TestEnv m)
@@ -482,15 +477,15 @@ callIdpGetAll' :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> m Respo
 callIdpGetAll' sparreq_ muid = do
   get $ sparreq_ . maybe id zUser muid . path "/identity-providers"
 
-callIdpCreate :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.NewIdP -> m IdP
-callIdpCreate sparreq_ muid newidp = do
-  resp <- callIdpCreate' (sparreq_ . expect2xx) muid newidp
+callIdpCreate :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.IdPMetadata -> m IdP
+callIdpCreate sparreq_ muid metadata = do
+  resp <- callIdpCreate' (sparreq_ . expect2xx) muid metadata
   either (liftIO . throwIO . ErrorCall . show) pure
     $ responseJSON @IdP resp
 
-callIdpCreate' :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.NewIdP -> m ResponseLBS
-callIdpCreate' sparreq_ muid newidp = do
-  post $ sparreq_ . maybe id zUser muid . path "/identity-providers/" . json newidp
+callIdpCreate' :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.IdPMetadata -> m ResponseLBS
+callIdpCreate' sparreq_ muid metadata = do
+  post $ sparreq_ . maybe id zUser muid . path "/identity-providers/" . body (RequestBodyLBS . cs $ SAML.encode metadata)
 
 callIdpDelete :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.IdPId -> m ()
 callIdpDelete sparreq_ muid idpid = void $ callIdpDelete' (sparreq_ . expect2xx) muid idpid

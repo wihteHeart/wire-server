@@ -244,8 +244,8 @@ spec = do
         context "some idps are registered" $ do
           it "returns a non-empty empty list" $ do
             env <- ask
-            (newidp, _) <- makeTestNewIdP
-            (owner, _, _) <- createTestIdPFrom newidp (env ^. teMgr) (env ^. teBrig) (env ^. teGalley) (env ^. teSpar)
+            metadata <- makeTestIdPMetadata
+            (owner, _, _) <- createTestIdPFrom metadata (env ^. teMgr) (env ^. teBrig) (env ^. teGalley) (env ^. teSpar)
             callIdpGetAll (env ^. teSpar) (Just owner)
               `shouldRespondWith` (not . null . _idplProviders)
 
@@ -281,14 +281,14 @@ spec = do
       context "no zuser" $ do
         it "responds with 'client error'" $ do
           env <- ask
-          callIdpCreate' (env ^. teSpar) Nothing (env ^. teNewIdP)
+          callIdpCreate' (env ^. teSpar) Nothing (env ^. teMetadata)
             `shouldRespondWith` checkErr (== 400) "client-error"
 
       context "zuser has no team" $ do
         it "responds with 'no team member'" $ do
           env <- ask
           (uid, _) <- call $ createRandomPhoneUser (env ^. teBrig)
-          callIdpCreate' (env ^. teSpar) (Just uid) (env ^. teNewIdP)
+          callIdpCreate' (env ^. teSpar) (Just uid) (env ^. teMetadata)
             `shouldRespondWith` checkErr (== 403) "no-team-member"
 
       context "zuser is a team member, but not a team owner" $ do
@@ -297,7 +297,7 @@ spec = do
           (_owner, tid) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
           newmember <- let Just perms = newPermissions mempty mempty
                        in call $ createTeamMember (env ^. teBrig) (env ^. teGalley) tid perms
-          callIdpCreate' (env ^. teSpar) (Just newmember) (env ^. teNewIdP)
+          callIdpCreate' (env ^. teSpar) (Just newmember) (env ^. teMetadata)
             `shouldRespondWith` checkErr (== 403) "insufficient-permissions"
 
       let -- | test that illegal create idp requests are rejected: create a 'NewIdP' value with a
@@ -310,11 +310,11 @@ spec = do
           createIdpMockErr :: HasCallStack => Maybe (Issuer -> URI -> IO [Node]) -> TestErrorLabel -> ReaderT TestEnv IO ()
           createIdpMockErr mkMetadata errlabel = do
             env <- ask
-            (newidp, IdPMetadata issuer requri _cert _certs) <- makeTestNewIdP
+            metadata@(IdPMetadata issuer requri _certs) <- makeTestIdPMetadata
             case mkMetadata of
               Nothing -> pure ()
               Just mk -> liftIO $ mk issuer requri >>= atomically . writeTChan (env ^. teIdPChan)
-            callIdpCreate' (env ^. teSpar) (Just (env ^. teUserId)) newidp
+            callIdpCreate' (env ^. teSpar) (Just (env ^. teUserId)) metadata
               `shouldRespondWith` checkErr (== 400) errlabel
 
       context "metadata url contains invalid hostname" $ do
@@ -336,21 +336,19 @@ spec = do
       context "idp (identified by issuer) is in use by other team" $ do
         it "rejects" $ do
           env <- ask
-          let newidp = env ^. teNewIdP
-              requri = env ^. teTstOpts . to cfgMockIdp . to mockidpRequestURI
           resetMeta <- do
             issuer <- makeIssuer
-            metadata <- Util.sampleIdPMetadata newidp issuer requri
+            metadata <- Util.sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
             pure . liftIO . atomically $ writeTChan (env ^. teIdPChan) metadata
 
           (uid1, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
           (uid2, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
           resetMeta
-          resp1     <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) newidp
+          resp1     <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) (env ^. teMetadata)
           resetMeta
-          resp2     <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) newidp
+          resp2     <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) (env ^. teMetadata)
           resetMeta
-          resp3     <- call $ callIdpCreate' (env ^. teSpar) (Just uid2) newidp
+          resp3     <- call $ callIdpCreate' (env ^. teSpar) (Just uid2) (env ^. teMetadata)
           liftIO $ do
             statusCode resp1 `shouldBe` 201
             statusCode resp2 `shouldBe` 400
@@ -360,8 +358,8 @@ spec = do
       context "everything in order" $ do
         it "responds with 2xx; makes IdP available for GET /identity-providers/" $ do
           env <- ask
-          (newidp, _) <- makeTestNewIdP
-          idp <- call $ callIdpCreate (env ^. teSpar) (Just (env ^. teUserId)) newidp
+          metadata <- makeTestIdPMetadata
+          idp <- call $ callIdpCreate (env ^. teSpar) (Just (env ^. teUserId)) metadata
           idp' <- call $ callIdpGet (env ^. teSpar) (Just (env ^. teUserId)) (idp ^. idpId)
           liftIO $ idp `shouldBe` idp'
 

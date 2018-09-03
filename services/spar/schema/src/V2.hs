@@ -11,6 +11,6 @@ migration :: Migration
 migration = Migration 2 "Add extra idp keys set" $ do
 
     void $ schema' [r|
-        ALTER TABLE idp ADD meta_public_key blob;
+        ALTER TABLE idp DROP metadata;
         ALTER TABLE idp ADD extra_public_keys list<blob>;
     |]

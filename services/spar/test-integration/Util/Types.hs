@@ -21,7 +21,7 @@ module Util.Types
   , teBrig
   , teGalley
   , teSpar
-  , teNewIdP
+  , teMetadata
   , teUserId
   , teTeamId
   , teIdP
@@ -73,7 +73,7 @@ data TestEnv = TestEnv
   , _teBrig        :: BrigReq
   , _teGalley      :: GalleyReq
   , _teSpar        :: SparReq
-  , _teNewIdP      :: SAML.NewIdP        -- ^ used for registering the mock idp with spar
+  , _teMetadata    :: SAML.IdPMetadata   -- ^ used for registering the mock idp with spar
   , _teUserId      :: UserId             -- ^ owner of the mock idp's home team
   , _teTeamId      :: TeamId             -- ^ home team of the mock idp
   , _teIdP         :: IdP                -- ^ mock idp details

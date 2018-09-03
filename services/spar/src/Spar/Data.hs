@@ -170,7 +170,7 @@ getUser (SAML.UserRef tenant subject) = fmap runIdentity <$>
 ----------------------------------------------------------------------
 -- idp
 
-type IdPConfigRow = (SAML.IdPId, URI, SAML.Issuer, URI, SignedCertificate, SignedCertificate, [SignedCertificate], TeamId)
+type IdPConfigRow = (SAML.IdPId, SAML.Issuer, URI, SignedCertificate, [SignedCertificate], TeamId)
 
 storeIdPConfig :: (HasCallStack, MonadClient m) => SAML.IdPConfig IdPExtra -> m ()
 storeIdPConfig idp = retry x5 . batch $ do
@@ -178,10 +178,8 @@ storeIdPConfig idp = retry x5 . batch $ do
   setConsistency Quorum
   addPrepQuery ins
     ( idp ^. SAML.idpId
-    , idp ^. SAML.idpMetadataURI
     , idp ^. SAML.idpIssuer
     , idp ^. SAML.idpRequestUri
-    , idp ^. SAML.idpMetadata . SAML.edCertMetadata
     , NL.head (idp ^. SAML.idpPublicKeys)
     , NL.tail (idp ^. SAML.idpPublicKeys)
       -- (the 'List1' is split up into head and tail to make migration from one-element-only easier.)
@@ -218,11 +216,9 @@ getIdPConfig idpid =
   where
     toIdp :: IdPConfigRow -> m IdP
     toIdp ( _idpId
-          , _idpMetadataURI
           -- metadata
           , _edIssuer
           , _edRequestURI
-          , _edCertMetadata
           , certsHead
           , certsTail
           -- extras
