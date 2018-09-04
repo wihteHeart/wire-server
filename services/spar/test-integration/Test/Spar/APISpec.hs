@@ -303,13 +303,13 @@ spec = do
           (uid1, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
           (uid2, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
 
-          let newMetadata = do
-                issuer <- makeIssuer
-                pure $ sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
+          newMetadata <- do
+            issuer <- makeIssuer
+            pure $ sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
 
-          resp1 <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
-          resp2 <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
-          resp3 <- call . callIdpCreate' (env ^. teSpar) (Just uid2) =<< newMetadata
+          resp1 <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) newMetadata
+          resp2 <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) newMetadata
+          resp3 <- call $ callIdpCreate' (env ^. teSpar) (Just uid2) newMetadata
 
           liftIO $ do
             statusCode resp1 `shouldBe` 201
