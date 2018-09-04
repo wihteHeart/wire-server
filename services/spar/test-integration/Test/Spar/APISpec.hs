@@ -307,15 +307,18 @@ spec = do
                 issuer <- makeIssuer
                 pure $ sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
 
-          resp1     <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
-          resp2     <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
-          resp3     <- call . callIdpCreate' (env ^. teSpar) (Just uid2) =<< newMetadata
+          resp1 <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
+          resp2 <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
+          resp3 <- call . callIdpCreate' (env ^. teSpar) (Just uid2) =<< newMetadata
 
           liftIO $ do
             statusCode resp1 `shouldBe` 201
+
             statusCode resp2 `shouldBe` 400
-            statusCode resp3 `shouldBe` 400
             responseJSON resp2 `shouldBe` Right (TestErrorLabel "idp-already-in-use")
+
+            statusCode resp3 `shouldBe` 400
+            responseJSON resp3 `shouldBe` Right (TestErrorLabel "idp-already-in-use")
 
       context "everything in order" $ do
         it "responds with 2xx; makes IdP available for GET /identity-providers/" $ do

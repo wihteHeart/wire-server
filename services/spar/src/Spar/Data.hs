@@ -195,7 +195,7 @@ storeIdPConfig idp = retry x5 . batch $ do
     )
   where
     ins :: PrepQuery W IdPConfigRow ()
-    ins = "INSERT INTO idp (idp, issuer, request_uri, public_key, extra_public_keys, team) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ins = "INSERT INTO idp (idp, issuer, request_uri, public_key, extra_public_keys, team) VALUES (?, ?, ?, ?, ?, ?)"
 
     byIssuer :: PrepQuery W (SAML.IdPId, SAML.Issuer) ()
     byIssuer = "INSERT INTO issuer_idp (idp, issuer) VALUES (?, ?)"
