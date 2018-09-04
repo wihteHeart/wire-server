@@ -474,7 +474,11 @@ callIdpCreate sparreq_ muid metadata = do
 
 callIdpCreate' :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.IdPMetadata -> m ResponseLBS
 callIdpCreate' sparreq_ muid metadata = do
-  post $ sparreq_ . maybe id zUser muid . path "/identity-providers/" . body (RequestBodyLBS . cs $ SAML.encode metadata)
+  post $ sparreq_
+    . maybe id zUser muid
+    . path "/identity-providers/"
+    . body (RequestBodyLBS . cs $ SAML.encode metadata)
+    . header "Content-Type" "application/xml"
 
 callIdpDelete :: (MonadIO m, MonadHttp m) => SparReq -> Maybe UserId -> SAML.IdPId -> m ()
 callIdpDelete sparreq_ muid idpid = void $ callIdpDelete' (sparreq_ . expect2xx) muid idpid
