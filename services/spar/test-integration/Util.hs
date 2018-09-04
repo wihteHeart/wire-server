@@ -24,6 +24,9 @@ module Util
   , createTeamMember
   , createRandomPhoneUser
   , zUser
+  , endpointToReq
+  , endpointToSettings
+  , endpointToURL
   , shouldRespondWith
   , call
   , ping
@@ -41,7 +44,6 @@ module Util
   , callIdpDelete, callIdpDelete'
   , initCassandra
   , module Test.Hspec
-  , module Util.MockIdP
   , module Util.Types
   ) where
 
@@ -53,17 +55,16 @@ import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Except
 import Control.Monad.Reader
-import Control.Retry
 import Data.Aeson as Aeson hiding (json)
 import Data.Aeson.Lens as Aeson
 import Data.ByteString.Conversion
 import Data.Either
 import Data.EitherR (fmapL)
 import Data.Id
-import Data.List.NonEmpty (NonEmpty((:|)))
 import Data.Maybe
 import Data.Misc (PlainTextPassword(..))
 import Data.Range
+import Data.String
 import Data.String.Conversions
 import Data.UUID as UUID hiding (null, fromByteString)
 import Data.UUID.V4 as UUID (nextRandom)
@@ -80,18 +81,21 @@ import Spar.Run
 import Spar.Types
 import System.Random (randomRIO)
 import Test.Hspec hiding (it, xit, pending, pendingWith)
+import Text.XML.Util
 import URI.ByteString
-import Util.MockIdP
+import URI.ByteString.QQ (uri)
+import Util.Options
 import Util.Types
+
 
 import qualified Brig.Types.Activation as Brig
 import qualified Brig.Types.User as Brig
 import qualified Brig.Types.User.Auth as Brig
-import qualified Control.Concurrent.Async as Async
 import qualified Data.ByteString.Base64.Lazy as EL
 import qualified Data.Text.Ascii as Ascii
 import qualified Galley.Types.Teams as Galley
-import qualified Network.Wai.Handler.WarpTLS as Warp
+import qualified Network.Wai.Handler.Warp as Warp
+import qualified Network.Wai.Handler.Warp.Internal as Warp
 import qualified SAML2.WebSSO as SAML
 import qualified Test.Hspec
 import qualified Text.XML as XML
@@ -109,48 +113,15 @@ mkEnv _teTstOpts _teOpts = do
       _teSpar    = endpointToReq (cfgSpar   _teTstOpts)
 
       _teMetadata :: IdPMetadata
-      _teMetadata = IdPMetadata
-        { _edIssuer = mockidpIssuer mockidp
-        , _edRequestURI = mockidpRequestURI mockidp
-        , _edCertAuthnResponse = mockidpDSigCert mockidp :| []
-        }
-
-      mockidp :: MockIdPConfig
-      mockidp = cfgMockIdp _teTstOpts
-
-  (app, _teIdPChan) <- serveSampleIdP makeIssuer (mockidpRequestURI mockidp)
-  let srv     = Warp.runTLS tlss defs app
-      tlss    = Warp.tlsSettings (mockidpCert mocktls) (mockidpPrivateKey mocktls)
-      mocktls = cfgMockIdp _teTstOpts
-      defs    = endpointToSettings . mockidpBind . cfgMockIdp $ _teTstOpts
-
-  _teIdPHandle <- Async.async srv
-  assertServiceIsUp _teIdPHandle _teMgr (endpointToReq . mockidpConnect . cfgMockIdp $ _teTstOpts)
+      _teMetadata = sampleIdPMetadata (Issuer [uri|http://issuer.net/|]) [uri|http://requri.net/|]
 
   (_teUserId, _teTeamId, _teIdP) <- do
     createTestIdPFrom _teMetadata _teMgr _teBrig _teGalley _teSpar
 
   pure TestEnv {..}
 
-assertServiceIsUp :: (HasCallStack, Show a) => Async.Async a -> Manager -> (Request -> Request) -> IO ()
-assertServiceIsUp async mgr req = waitForService mgr req >>= \case
-  True  -> pure ()
-  False -> Async.poll async >>= \case
-    Nothing        -> throwIO . ErrorCall $ "mock idp is not responding"
-    Just (Left e)  -> throwIO . ErrorCall $ "mock idp failed with " <> show e
-    Just (Right a) -> throwIO . ErrorCall $ "mock idp returned " <> show a
-
-waitForService :: Manager -> (Request -> Request) -> IO Bool
-waitForService mgr req =
-  retrying (constantDelay 100000 <> limitRetries 50) (\_ -> pure . not) (\_ -> serviceIsUp mgr req)
-
-serviceIsUp :: Manager -> (Request -> Request) -> IO Bool
-serviceIsUp mgr req = (runHttpT mgr (Bilge.get req) >> pure True)
-  `Control.Exception.catch` \(_ :: HttpException) -> pure False
-
-
 destroyEnv :: HasCallStack => TestEnv -> IO ()
-destroyEnv = Async.cancel . (^. teIdPHandle)
+destroyEnv _ = pure ()
 
 
 passes :: MonadIO m => m ()
@@ -336,6 +307,24 @@ zUser = header "Z-User" . toByteString'
 
 zConn :: SBS -> Request -> Request
 zConn = header "Z-Connection"
+
+
+endpointToReq :: Endpoint -> (Bilge.Request -> Bilge.Request)
+endpointToReq ep = Bilge.host (ep ^. epHost . to cs) . Bilge.port (ep ^. epPort)
+
+endpointToSettings :: Endpoint -> Warp.Settings
+endpointToSettings endpoint = Warp.defaultSettings
+  { Warp.settingsHost = Data.String.fromString . cs $ endpoint ^. epHost
+  , Warp.settingsPort = fromIntegral $ endpoint ^. epPort
+  }
+
+endpointToURL :: MonadIO m => Endpoint -> ST -> m URI
+endpointToURL endpoint urlpath = either err pure $ parseURI' urlst
+  where
+    urlst   = "http://" <> urlhost <> ":" <> urlport <> "/" <> urlpath
+    urlhost = cs $ endpoint ^. epHost
+    urlport = cs . show $ endpoint ^. epPort
+    err     = liftIO . throwIO . ErrorCall . show . (, (endpoint, urlst))
 
 
 -- spar specifics

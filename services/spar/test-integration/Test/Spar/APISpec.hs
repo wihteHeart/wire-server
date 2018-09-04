@@ -12,7 +12,6 @@ module Test.Spar.APISpec where
 
 import Bilge
 import Brig.Types.User
-import Control.Concurrent.STM (atomically, writeTChan)
 import Control.Monad.Reader
 import Data.ByteString.Conversion
 import Data.Id
@@ -28,8 +27,6 @@ import SAML2.WebSSO as SAML
 import SAML2.WebSSO.Test.Credentials
 import SAML2.WebSSO.Test.MockResponse
 import Spar.Types
-import Text.XML
-import URI.ByteString as URI
 import URI.ByteString.QQ (uri)
 import Util
 
@@ -300,49 +297,20 @@ spec = do
           callIdpCreate' (env ^. teSpar) (Just newmember) (env ^. teMetadata)
             `shouldRespondWith` checkErr (== 403) "insufficient-permissions"
 
-      let -- | test that illegal create idp requests are rejected: create a 'NewIdP' value with a
-          -- fresh 'Issuer' value (same IdP issuer can't serve two different teams); load a metadata
-          -- file that is broken in some interesting way into the mock IdP started in module 'Spec';
-          -- then attempt to register the 'NewIdP'.
-          --
-          -- spar will request the metadata url; validate the metadata received from the mock idp we
-          -- just loaded here; and return the expected error (or not).
-          createIdpMockErr :: HasCallStack => Maybe (Issuer -> URI -> IO [Node]) -> TestErrorLabel -> ReaderT TestEnv IO ()
-          createIdpMockErr mkMetadata errlabel = do
-            env <- ask
-            metadata@(IdPMetadata issuer requri _certs) <- makeTestIdPMetadata
-            case mkMetadata of
-              Nothing -> pure ()
-              Just mk -> liftIO $ mk issuer requri >>= atomically . writeTChan (env ^. teIdPChan)
-            callIdpCreate' (env ^. teSpar) (Just (env ^. teUserId)) metadata
-              `shouldRespondWith` checkErr (== 400) errlabel
-
-      context "metadata url contains invalid hostname" $ do
-        it "rejects with a useful error message" $ do
-          pending
-
-      context "bad metadata answer" $ do
-        it "rejects" $ do
-          createIdpMockErr
-            (Just $ \_ _ -> pure [NodeElement (Element "bloo" mempty mempty)])
-            "invalid-signature"  -- well, this is just what it checks first...
-
       context "idp (identified by issuer) is in use by other team" $ do
         it "rejects" $ do
           env <- ask
-          resetMeta <- do
-            issuer <- makeIssuer
-            metadata <- _ $ sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
-            pure . liftIO . atomically $ writeTChan (env ^. teIdPChan) metadata
-
           (uid1, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
           (uid2, _) <- call $ createUserWithTeam (env ^. teBrig) (env ^. teGalley)
-          resetMeta
-          resp1     <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) (env ^. teMetadata)
-          resetMeta
-          resp2     <- call $ callIdpCreate' (env ^. teSpar) (Just uid1) (env ^. teMetadata)
-          resetMeta
-          resp3     <- call $ callIdpCreate' (env ^. teSpar) (Just uid2) (env ^. teMetadata)
+
+          let newMetadata = do
+                issuer <- makeIssuer
+                pure $ sampleIdPMetadata issuer (env ^. teMetadata . edRequestURI)
+
+          resp1     <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
+          resp2     <- call . callIdpCreate' (env ^. teSpar) (Just uid1) =<< newMetadata
+          resp3     <- call . callIdpCreate' (env ^. teSpar) (Just uid2) =<< newMetadata
+
           liftIO $ do
             statusCode resp1 `shouldBe` 201
             statusCode resp2 `shouldBe` 400
